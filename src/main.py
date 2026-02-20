@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(toolbar)
         
         self.viewer = STLViewer()
+        self.viewer.supports_changed.connect(self.on_supports_changed)
         layout.addWidget(self.viewer)
     
     def load_stl(self):
@@ -76,6 +77,10 @@ class MainWindow(QMainWindow):
         self.supports = generator.generate(self.current_vertices)
         self.viewer.set_supports(self.supports)
         self.btn_export.setEnabled(True)
+    
+    def on_supports_changed(self):
+        self.supports = self.viewer.supports
+        self.btn_export.setEnabled(len(self.supports) > 0)
     
     def export_model(self):
         filepath, _ = QFileDialog.getSaveFileName(

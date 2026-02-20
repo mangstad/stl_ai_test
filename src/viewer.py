@@ -1,8 +1,11 @@
 from PyQt5.QtWidgets import QOpenGLWidget
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 from OpenGL.GL import *
+from OpenGL.GLU import gluProject
+import math
 
 class STLViewer(QOpenGLWidget):
+    supports_changed = pyqtSignal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self.vertices = None
@@ -58,6 +61,27 @@ class STLViewer(QOpenGLWidget):
     
     def mousePressEvent(self, event):
         self.last_pos = event.pos()
+        
+        if event.button() == Qt.LeftButton and self.supports:
+            click_pos = event.pos()
+            for i, s in enumerate(self.supports):
+                tip_screen = self._project_to_screen(s['tip'])
+                if tip_screen is not None:
+                    dist = math.hypot(click_pos.x() - tip_screen.x(), click_pos.y() - tip_screen.y())
+                    if dist < 15:
+                        self.supports.pop(i)
+                        self.update()
+                        self.supports_changed.emit()
+                        break
+    
+    def _project_to_screen(self, point):
+        modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
+        projection = glGetDoublev(GL_PROJECTION_MATRIX)
+        viewport = glGetIntegerv(GL_VIEWPORT)
+        
+        winx, winy, winz = gluProject(point[0], point[1], point[2], modelview, projection, viewport)
+        from PyQt5.QtCore import QPoint
+        return QPoint(int(winx), int(winy))
     
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton and self.last_pos is not None:
