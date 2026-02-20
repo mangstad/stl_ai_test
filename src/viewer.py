@@ -1,8 +1,9 @@
 from PyQt5.QtWidgets import QOpenGLWidget
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 from OpenGL.GL import *
-from OpenGL.GLU import gluProject
+from OpenGL.GLU import gluProject, gluPerspective
 import math
+import numpy as np
 
 class STLViewer(QOpenGLWidget):
     supports_changed = pyqtSignal()
@@ -11,14 +12,34 @@ class STLViewer(QOpenGLWidget):
         self.vertices = None
         self.faces = None
         self.supports = []
-        self.rotation_x = 0
-        self.rotation_y = 0
+        
+        self.camera_distance = 150.0
+        self.camera_rot_x = -30.0
+        self.camera_rot_y = 45.0
+        self.camera_pan_x = 0.0
+        self.camera_pan_y = 0.0
+        
         self.last_pos = None
+        self.scale = 1.0
+        self.center = np.array([0.0, 0.0, 0.0])
     
     def set_mesh(self, vertices, faces):
         self.vertices = vertices
         self.faces = faces
+        self._calculate_transform()
         self.update()
+    
+    def _calculate_transform(self):
+        if self.vertices is None or len(self.vertices) == 0:
+            return
+        min_coords = self.vertices.min(axis=0)
+        max_coords = self.vertices.max(axis=0)
+        self.center = (min_coords + max_coords) / 2.0
+        extents = max_coords - min_coords
+        max_extent = extents.max()
+        if max_extent > 0:
+            self.scale = 2.0 / max_extent
+        self.camera_distance = 3.0 / self.scale
     
     def set_supports(self, supports):
         self.supports = supports
@@ -26,22 +47,27 @@ class STLViewer(QOpenGLWidget):
     
     def initializeGL(self):
         glEnable(GL_DEPTH_TEST)
-        glClearColor(0.2, 0.2, 0.2, 1.0)
+        glClearColor(0.1, 0.1, 0.12, 1.0)
     
     def resizeGL(self, w, h):
         glViewport(0, 0, w, h)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
+        gluPerspective(45, w / max(h, 1), 0.1, 10000.0)
     
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        glRotatef(self.rotation_x, 1, 0, 0)
-        glRotatef(self.rotation_y, 0, 1, 0)
+        
+        glTranslatef(self.camera_pan_x, self.camera_pan_y, -self.camera_distance)
+        glRotatef(self.camera_rot_x, 1, 0, 0)
+        glRotatef(self.camera_rot_y, 0, 1, 0)
+        glTranslatef(-self.center[0], -self.center[1], -self.center[2])
         
         if self.vertices is not None and self.faces is not None:
-            glColor3f(0.8, 0.8, 0.8)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+            glColor3f(0.0, 0.8, 0.2)
             glBegin(GL_TRIANGLES)
             for face in self.faces:
                 for idx in face:
@@ -49,7 +75,9 @@ class STLViewer(QOpenGLWidget):
                     glVertex3f(v[0], v[1], v[2])
             glEnd()
         
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         glColor3f(1.0, 1.0, 0.0)
+        glLineWidth(2.0)
         glBegin(GL_LINES)
         for s in self.supports:
             glVertex3f(*s['base'])
@@ -57,7 +85,10 @@ class STLViewer(QOpenGLWidget):
         glEnd()
     
     def wheelEvent(self, event):
-        pass
+        delta = event.angleDelta().y()
+        self.camera_distance *= (1.0 - delta * 0.001)
+        self.camera_distance = max(1.0, min(self.camera_distance, 10000.0))
+        self.update()
     
     def mousePressEvent(self, event):
         self.last_pos = event.pos()
@@ -84,9 +115,19 @@ class STLViewer(QOpenGLWidget):
         return QPoint(int(winx), int(winy))
     
     def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.LeftButton and self.last_pos is not None:
-            delta = event.pos() - self.last_pos
-            self.rotation_y += delta.x()
-            self.rotation_x += delta.y()
+        if self.last_pos is None:
+            return
+            
+        delta = event.pos() - self.last_pos
+        
+        if event.buttons() & Qt.RightButton:
+            self.camera_rot_y += delta.x() * 0.5
+            self.camera_rot_x += delta.y() * 0.5
             self.update()
-            self.last_pos = event.pos()
+        elif event.buttons() & Qt.LeftButton:
+            pan_speed = self.camera_distance * 0.002
+            self.camera_pan_x += delta.x() * pan_speed
+            self.camera_pan_y -= delta.y() * pan_speed
+            self.update()
+        
+        self.last_pos = event.pos()
