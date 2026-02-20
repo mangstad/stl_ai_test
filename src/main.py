@@ -7,6 +7,7 @@ from .viewer import STLViewer
 from .stl_loader import STLLoader
 from .mesh_analyzer import MeshAnalyzer
 from .support_generator import SupportGenerator
+from .exporter import STLExporter
 
 
 class MainWindow(QMainWindow):
@@ -81,7 +82,12 @@ class MainWindow(QMainWindow):
             self, "Export STL", "", "STL Files (*.stl)"
         )
         if filepath:
-            QMessageBox.information(self, "Export", f"Export to {filepath} not implemented")
+            try:
+                exporter = STLExporter()
+                exporter.export(filepath, self.current_vertices, self.current_faces, self.supports)
+                QMessageBox.information(self, "Export", f"Exported to {filepath}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to export: {e}")
 
 
 def main():
